@@ -19,7 +19,7 @@ class AirportController extends Controller
     try {
         $response = AmadeusService::call(
             'GET',
-            'v1/reference-data/locations',
+            '/v1/reference-data/locations',
             [],
             [
                 'subType' => 'AIRPORT',
