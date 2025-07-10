@@ -11,126 +11,184 @@ use Symfony\Component\HttpFoundation\Response;
 
 class FlightSearchController extends Controller
 {
-    public function search(Request $request)
-    {
-        try {
-            $token = $request->header('Amadeus-Token'); // Or use your token logic
-            $currency = $request->input('currencyCode', 'USD');
-            $max = $request->input('max', 10);
-            $tripType = $request->input('trip_type', 'round-trip');
+public function search(Request $request)
+{
+    try {
+        $token = $request->header('Amadeus-Token'); // Optional: if your service needs it
+        $currency = $request->input('currencyCode', 'USD');
+        $max = $request->input('max', 10);
+        $tripType = $request->input('trip_type', 'oneWay');
+        $tripsString = $request->input('trips');
+        $adult = $request->input('adult');
 
-            // ✅ Required
-            $tripsString = $request->input('trips');
-            $adult = $request->input('adult');
+        if (!$tripsString || !$adult) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Missing required search parameters',
+            ], 400);
+        }
 
-            if (!$tripsString || !$adult) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Missing required search parameters',
-                ], 400);
-            }
+        // Parse trips
+        $parsedTrips = collect(explode(';', $tripsString))
+            ->map(function ($trip) {
+                return explode(',', $trip);
+            })
+            ->filter(function ($parts) {
+                return count($parts) === 3 && $parts[0] && $parts[1] && $parts[2];
+            })
+            ->map(function ($parts) {
+                return [
+                    'from' => $parts[0],
+                    'to' => $parts[1],
+                    'date' => $parts[2],
+                ];
+            })
+            ->values();
 
-            // ✅ Parse trips
-            $parsedTrips = collect(explode(';', $tripsString))
-                ->map(function ($trip) {
-                    return explode(',', $trip);
-                })
-                ->filter(function ($parts) {
-                    return count($parts) === 3 && $parts[0] && $parts[1] && $parts[2];
-                })
-                ->map(function ($parts) {
-                    return [
-                        'from' => $parts[0],
-                        'to' => $parts[1],
-                        'date' => $parts[2],
-                    ];
-                })
-                ->values();
+        if ($parsedTrips->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No valid trips provided',
+            ], 400);
+        }
 
-            if ($parsedTrips->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No valid trips provided',
-                ], 400);
-            }
+        // Normalize travel class
+        $normalizedClass = $this->normalizeTravelClass($request->input('travelClass'));
 
-            // ✅ Normalize travel class
-            $normalizedClass = $this->normalizeTravelClass($request->input('travelClass'));
+        // Detect round-trip
+        $isRoundTrip = $parsedTrips->count() === 2 &&
+                       $parsedTrips[0]['from'] === $parsedTrips[1]['to'] &&
+                       $parsedTrips[0]['to'] === $parsedTrips[1]['from'];
 
-            // ✅ Fetch from Amadeus
+        // One-way or round-trip (GET)
+        if ($parsedTrips->count() === 1 || $isRoundTrip) {
             $queryParams = [
-                'originLocationCode'      => optional($parsedTrips[0])['from'],
-                'destinationLocationCode' => optional($parsedTrips[0])['to'],
-                'departureDate'           => optional($parsedTrips[0])['date'],
-                'returnDate'              => $request->input('returnDate'),
+                'originLocationCode'      => $parsedTrips[0]['from'],
+                'destinationLocationCode' => $parsedTrips[0]['to'],
+                'departureDate'           => $parsedTrips[0]['date'],
                 'adults'                  => $adult,
-                'children'                => $request->input('children'),
-                'infants'                 => $request->input('infants'),
-                'travelClass'             => $normalizedClass,
                 'currencyCode'            => $currency,
                 'max'                     => $max,
             ];
 
-            $queryParams = array_filter($queryParams, fn($v) => !is_null($v) && $v !== '');
+            if ($isRoundTrip) {
+                $queryParams['returnDate'] = $parsedTrips[1]['date'];
+            }
+
+            if ($request->filled('children')) {
+                $queryParams['children'] = $request->input('children');
+            }
+            if ($request->filled('infants')) {
+                $queryParams['infants'] = $request->input('infants');
+            }
+            if ($normalizedClass) {
+                $queryParams['travelClass'] = $normalizedClass;
+            }
 
             $response = AmadeusService::call(
                 'GET',
                 '/v2/shopping/flight-offers',
                 [],
-                $queryParams
+                array_filter($queryParams)
             );
+        }
+        // Multi-city (POST)
+        else {
+            $travelers = [];
 
-            $offers = $response['data'] ?? [];
-
-            // ✅ Format using Resource
-            $formatted = FlightOfferResource::collection($offers);
-
-            // ✅ Filter fields
-            $fields = $request->input('fields');
-            $selectedFields = null;
-
-            if ($fields) {
-                if (is_array($fields)) {
-                    $selectedFields = collect($fields)->flatMap(fn($f) => explode(',', $f))->map('trim')->toArray();
-                } else {
-                    $selectedFields = explode(',', $fields);
-                }
-
-                $formatted = $formatted->map(function ($flight) use ($selectedFields) {
-                    return collect($flight)->only($selectedFields);
-                });
+            for ($i = 1; $i <= (int)$adult; $i++) {
+                $travelers[] = ['id' => (string)$i, 'travelerType' => 'ADULT'];
             }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Flight offers fetched successfully',
-                'payload' => [
-                    'total' => count($formatted),
-                    'formatted' => $formatted,
-                ],
-            ], Response::HTTP_OK);
+            $start = count($travelers) + 1;
 
-        } catch (\Exception $e) {
-            Log::error('Flight Search Error: ' . $e->getMessage());
+            for ($i = 0; $i < (int)$request->input('children', 0); $i++) {
+                $travelers[] = ['id' => (string)($start + $i), 'travelerType' => 'CHILD'];
+            }
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Flight search failed',
-                'error' => $e->getMessage(),
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+            $start = count($travelers) + 1;
+
+            for ($i = 0; $i < (int)$request->input('infants', 0); $i++) {
+                $travelers[] = ['id' => (string)($start + $i), 'travelerType' => 'HELD_INFANT'];
+            }
+
+            if ($normalizedClass) {
+                foreach ($travelers as &$traveler) {
+                    $traveler['cabinRestrictions'] = [[
+                        'cabin' => $normalizedClass,
+                        'coverage' => 'MOST_SEGMENTS',
+                        'originDestinationIds' => $parsedTrips->keys()->map(fn($k) => (string)($k + 1))->toArray(),
+                    ]];
+                }
+            }
+
+            $body = [
+                'currencyCode' => $currency,
+                'originDestinations' => $parsedTrips->map(function ($trip, $i) {
+                    return [
+                        'id' => (string)($i + 1),
+                        'originLocationCode' => $trip['from'],
+                        'destinationLocationCode' => $trip['to'],
+                        'departureDateTimeRange' => ['date' => $trip['date']],
+                    ];
+                })->toArray(),
+                'travelers' => $travelers,
+                'sources' => ['GDS'],
+                'max' => $max,
+            ];
+
+            $response = AmadeusService::call(
+                'POST',
+                '/v2/shopping/flight-offers',
+                [],
+                [],
+                $body
+            );
         }
-    }
 
-    private function normalizeTravelClass($class)
-    {
-        return match (strtolower($class)) {
-            'economy', 'eco' => 'ECONOMY',
-            'business', 'biz' => 'BUSINESS',
-            'first' => 'FIRST',
-            'premium' => 'PREMIUM_ECONOMY',
-            default => null,
-        };
+        $offers = $response['data'] ?? [];
+        $formatted = FlightOfferResource::collection($offers);
+
+        // Optional: filter fields
+        $fields = $request->input('fields');
+        if ($fields) {
+            $selectedFields = is_array($fields)
+                ? collect($fields)->flatMap(fn($f) => explode(',', $f))->map('trim')->toArray()
+                : explode(',', $fields);
+
+            $formatted = $formatted->map(fn($flight) => collect($flight)->only($selectedFields));
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Flight offers fetched successfully',
+            'payload' => [
+                'total' => count($formatted),
+                'formatted' => $formatted,
+            ],
+        ], Response::HTTP_OK);
+
+    } catch (\Exception $e) {
+        Log::error('Flight Search Error: ' . $e->getMessage());
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Flight search failed',
+            'error' => $e->getMessage(),
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
+}
+
+private function normalizeTravelClass($class)
+{
+    return match (strtolower($class)) {
+        'economy', 'eco' => 'ECONOMY',
+        'business', 'biz' => 'BUSINESS',
+        'first' => 'FIRST',
+        'premium' => 'PREMIUM_ECONOMY',
+        default => null,
+    };
+}
 
 
 
