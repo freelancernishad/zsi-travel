@@ -139,7 +139,8 @@ class FlightOfferResource extends JsonResource
                     ...$amenities,
                 ];
             }),
-            'stopsDetails' => collect($segments)->slice(1)->map(function ($seg, $index) {
+
+            'stopsDetails' => collect($segments)->slice(1)->values()->map(function ($seg, $index) {
                 return [
                     'stopNumber' => $index + 1,
                     'airportCode' => $seg['departure']['iataCode'],
@@ -147,6 +148,10 @@ class FlightOfferResource extends JsonResource
                     'layoverAirportName' => $seg['departure']['iataCode'],
                 ];
             }),
+
+
+
+
         ];
     }
 
