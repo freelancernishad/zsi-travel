@@ -13,16 +13,22 @@ class FlightOfferResource extends JsonResource
         $firstSegment = $this['itineraries'][0]['segments'][0] ?? [];
         $airlineCode = $firstSegment['carrierCode'] ?? 'XX';
 
-        $dealType = $this['isOneWay'] ?? false
-            ? 'one-way'
-            : (count($this['itineraries']) === 2 ? 'round-trip' : 'multi-city');
+        // ✅ Infer deal type and isOneWay based on itinerary count
+        $itineraryCount = count($this['itineraries'] ?? []);
+        $dealType = match (true) {
+            $itineraryCount === 1 => 'one-way',
+            $itineraryCount === 2 => 'round-trip',
+            $itineraryCount > 2 => 'multi-destination',
+            default => 'unknown',
+        };
+        $isOneWay = $dealType === 'one-way';
 
         return [
             'id' => $this['id'],
             'validatingAirlineCodes' => $this['validatingAirlineCodes'] ?? [],
             'instantTicketingRequired' => $this['instantTicketingRequired'] ?? false,
             'lastTicketingDate' => $this['lastTicketingDate'] ?? null,
-            'isOneWay' => $this['isOneWay'] ?? false,
+            'isOneWay' => $isOneWay,
             'isUpsellOffer' => $this['isUpsellOffer'] ?? false,
             'numberOfSeats' => $this['numberOfBookableSeats'] ?? null,
             'refundable' => $this['refundable'] ?? 'Partially Refundable',
@@ -39,14 +45,14 @@ class FlightOfferResource extends JsonResource
             'travelerPricing' => $this->mapTravelerPricing($this['travelerPricings'] ?? []),
             ...$this->formatLegsByType($dealType, $this['itineraries'], $this['travelerPricings'][0]['fareDetailsBySegment'] ?? []),
 
-            // ✅ Full encoded offer for pricing later
+            // ✅ Full encoded offer
             'full_offer_encoded' => base64_encode(json_encode($this->resource)),
         ];
     }
 
     private function formatLegsByType($type, $itineraries, $fareDetailsBySegment)
     {
-        if ($type === 'multi-city') {
+        if ($type === 'multi-destination') {
             return [
                 'legs' => collect($itineraries)->map(function ($itinerary, $index) use ($fareDetailsBySegment) {
                     return array_merge(

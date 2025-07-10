@@ -11,15 +11,21 @@ use Symfony\Component\HttpFoundation\Response;
 
 class FlightSearchController extends Controller
 {
+
+
 public function search(Request $request)
 {
     try {
-        $token = $request->header('Amadeus-Token'); // Optional: if your service needs it
+        $token = $request->header('Amadeus-Token'); // Optional
         $currency = $request->input('currencyCode', 'USD');
         $max = $request->input('max', 10);
-        $tripType = $request->input('trip_type', 'oneWay');
-        $tripsString = $request->input('trips');
         $adult = $request->input('adult');
+        $children = $request->input('children');
+        $infants = $request->input('infants');
+        $travelClass = $request->input('travelClass');
+        $returnDate = $request->input('returnDate');
+        $tripTypeInput = $request->input('trip_type');
+        $tripsString = $request->input('trips');
 
         if (!$tripsString || !$adult) {
             return response()->json([
@@ -28,7 +34,6 @@ public function search(Request $request)
             ], 400);
         }
 
-        // Parse trips
         $parsedTrips = collect(explode(';', $tripsString))
             ->map(function ($trip) {
                 return explode(',', $trip);
@@ -52,86 +57,63 @@ public function search(Request $request)
             ], 400);
         }
 
-        // Normalize travel class
-        $normalizedClass = $this->normalizeTravelClass($request->input('travelClass'));
-
-        // Detect round-trip
-        $isRoundTrip = $parsedTrips->count() === 2 &&
-                       $parsedTrips[0]['from'] === $parsedTrips[1]['to'] &&
-                       $parsedTrips[0]['to'] === $parsedTrips[1]['from'];
-
-        // One-way or round-trip (GET)
-        if ($parsedTrips->count() === 1 || $isRoundTrip) {
-            $queryParams = [
-                'originLocationCode'      => $parsedTrips[0]['from'],
-                'destinationLocationCode' => $parsedTrips[0]['to'],
-                'departureDate'           => $parsedTrips[0]['date'],
-                'adults'                  => $adult,
-                'currencyCode'            => $currency,
-                'max'                     => $max,
-            ];
-
-            if ($isRoundTrip) {
-                $queryParams['returnDate'] = $parsedTrips[1]['date'];
-            }
-
-            if ($request->filled('children')) {
-                $queryParams['children'] = $request->input('children');
-            }
-            if ($request->filled('infants')) {
-                $queryParams['infants'] = $request->input('infants');
-            }
-            if ($normalizedClass) {
-                $queryParams['travelClass'] = $normalizedClass;
-            }
-
-            $response = AmadeusService::call(
-                'GET',
-                '/v2/shopping/flight-offers',
-                [],
-                array_filter($queryParams)
-            );
+        $tripType = $tripTypeInput;
+        $tripCount = $parsedTrips->count();
+        if (!$tripType || !in_array($tripType, ['one-way', 'round-trip', 'multi-destination'])) {
+            $tripType = match (true) {
+                $tripCount === 1 => 'one-way',
+                $tripCount === 2 => 'round-trip',
+                $tripCount > 2 => 'multi-destination',
+                default => 'unknown',
+            };
         }
-        // Multi-city (POST)
-        else {
-            $travelers = [];
 
-            for ($i = 1; $i <= (int)$adult; $i++) {
-                $travelers[] = ['id' => (string)$i, 'travelerType' => 'ADULT'];
-            }
+        $normalizedClass = $this->normalizeTravelClass($travelClass);
 
-            $start = count($travelers) + 1;
-
-            for ($i = 0; $i < (int)$request->input('children', 0); $i++) {
-                $travelers[] = ['id' => (string)($start + $i), 'travelerType' => 'CHILD'];
-            }
-
-            $start = count($travelers) + 1;
-
-            for ($i = 0; $i < (int)$request->input('infants', 0); $i++) {
-                $travelers[] = ['id' => (string)($start + $i), 'travelerType' => 'HELD_INFANT'];
-            }
-
-            if ($normalizedClass) {
-                foreach ($travelers as &$traveler) {
-                    $traveler['cabinRestrictions'] = [[
-                        'cabin' => $normalizedClass,
+        // ✅ Prepare common traveler data
+        $travelers = [
+            [
+                'id' => '1',
+                'travelerType' => 'ADULT',
+                'cabinRestrictions' => [
+                    [
+                        'cabin' => strtoupper($normalizedClass),
                         'coverage' => 'MOST_SEGMENTS',
-                        'originDestinationIds' => $parsedTrips->keys()->map(fn($k) => (string)($k + 1))->toArray(),
-                    ]];
-                }
-            }
+                        'originDestinationIds' => $parsedTrips->pluck('id')->all(),
+                    ],
+                ],
+            ],
+        ];
 
-            $body = [
+        // Add children and infants if present
+        $id = 2;
+        if ($children) {
+            for ($i = 0; $i < $children; $i++) {
+                $travelers[] = ['id' => (string)$id++, 'travelerType' => 'CHILD'];
+            }
+        }
+        if ($infants) {
+            for ($i = 0; $i < $infants; $i++) {
+                $travelers[] = ['id' => (string)$id++, 'travelerType' => 'HELD_INFANT'];
+            }
+        }
+
+        // ✅ Handle trip types differently
+        if ($tripType === 'multi-destination') {
+            $originDestinations = $parsedTrips->map(function ($trip, $index) {
+                return [
+                    'id' => (string)($index + 1),
+                    'originLocationCode' => $trip['from'],
+                    'destinationLocationCode' => $trip['to'],
+                    'departureDateTimeRange' => [
+                        'date' => $trip['date'],
+                    ],
+                ];
+            })->all();
+
+            $queryParams = [
                 'currencyCode' => $currency,
-                'originDestinations' => $parsedTrips->map(function ($trip, $i) {
-                    return [
-                        'id' => (string)($i + 1),
-                        'originLocationCode' => $trip['from'],
-                        'destinationLocationCode' => $trip['to'],
-                        'departureDateTimeRange' => ['date' => $trip['date']],
-                    ];
-                })->toArray(),
+                'originDestinations' => $originDestinations,
                 'travelers' => $travelers,
                 'sources' => ['GDS'],
                 'max' => $max,
@@ -140,16 +122,45 @@ public function search(Request $request)
             $response = AmadeusService::call(
                 'POST',
                 '/v2/shopping/flight-offers',
+                $queryParams,
+                []
+            );
+        } else {
+            // For one-way and round-trip
+            $queryParams = [
+                'originLocationCode' => $parsedTrips[0]['from'],
+                'destinationLocationCode' => $parsedTrips[0]['to'],
+                'departureDate' => $parsedTrips[0]['date'],
+                'adults' => $adult,
+                'children' => $children,
+                'infants' => $infants,
+                'travelClass' => $normalizedClass,
+                'currencyCode' => $currency,
+                'max' => $max,
+            ];
+
+            if ($tripType === 'round-trip' && isset($parsedTrips[1]['date'])) {
+                $queryParams['returnDate'] = $parsedTrips[1]['date'];
+            } elseif ($tripType === 'round-trip' && $returnDate) {
+                $queryParams['returnDate'] = $returnDate;
+            }
+
+            $queryParams = array_filter($queryParams, fn($v) => !is_null($v) && $v !== '');
+
+            $response = AmadeusService::call(
+                'GET',
+                '/v2/shopping/flight-offers',
                 [],
-                [],
-                $body
+                $queryParams
             );
         }
 
         $offers = $response['data'] ?? [];
+
+        // ✅ Format offers
         $formatted = FlightOfferResource::collection($offers);
 
-        // Optional: filter fields
+        // ✅ Optional field filter
         $fields = $request->input('fields');
         if ($fields) {
             $selectedFields = is_array($fields)
@@ -164,20 +175,21 @@ public function search(Request $request)
             'message' => 'Flight offers fetched successfully',
             'payload' => [
                 'total' => count($formatted),
+                'trip_type' => $tripType,
                 'formatted' => $formatted,
             ],
-        ], Response::HTTP_OK);
+        ], 200);
 
     } catch (\Exception $e) {
-        Log::error('Flight Search Error: ' . $e->getMessage());
-
+        \Log::error('Flight Search Error: ' . $e->getMessage());
         return response()->json([
             'success' => false,
             'message' => 'Flight search failed',
             'error' => $e->getMessage(),
-        ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        ], 500);
     }
 }
+
 
 private function normalizeTravelClass($class)
 {
