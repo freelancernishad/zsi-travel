@@ -87,6 +87,7 @@ class ApiResponse
             return $responseData;
         }
 
+
         // Token or specific structures
         if (isset($responseData['app'], $responseData['database'], $responseData['server'])) {
             return $responseData;
@@ -104,11 +105,19 @@ class ApiResponse
             return $responseData['data'];
         }
 
+        if (isset($responseData['pricing_payload']) && isset($responseData['details'])) {
+            unset($responseData['message'], $responseData['success']);
+            return $responseData;
+        }
+
         foreach ($responseData as $key => $value) {
             if ($key !== 'message' && $key !== 'success' && is_array($value)) {
                 return $value;
             }
         }
+
+
+
 
         return $responseData;
     }

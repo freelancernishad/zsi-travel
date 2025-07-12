@@ -246,7 +246,7 @@ private function normalizeTravelClass($class)
             ], 422);
         }
 
-        $payload = [
+         $payload = [
             'data' => [
                 'type' => 'flight-offers-pricing',
                 'flightOffers' => [$flightOffer],
@@ -263,7 +263,8 @@ private function normalizeTravelClass($class)
         return response()->json([
             'success' => true,
             'message' => 'Pricing successful',
-            'payload' => $response,
+            'pricing_payload' => $response,
+            'details' => $flightOffer,
         ], 200);
 
     } catch (\Exception $e) {
