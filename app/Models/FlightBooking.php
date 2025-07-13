@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class FlightBooking extends Model
 {
     protected $fillable = [
+        'unique_key',
         'booking_id',
         'currency',
         'amount',

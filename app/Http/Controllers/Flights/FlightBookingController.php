@@ -6,6 +6,7 @@ use Stripe\Stripe;
 use Illuminate\Http\Request;
 use Stripe\Checkout\Session;
 use App\Models\FlightBooking;
+use App\Models\FlightPricing;
 use App\Services\AmadeusService;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Validator;
@@ -15,7 +16,7 @@ class FlightBookingController extends Controller
     public function createPayment(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'pricing_data' => 'required|array',
+            'unique_key' => 'required|string|exists:flight_pricings,unique_key',
             'travelers' => 'required|array',
             'contacts' => 'required|array',
             'amount' => 'required|numeric',
@@ -28,9 +29,13 @@ class FlightBookingController extends Controller
 
         $validated = $validator->validated();
 
-        // Step 1: Store booking info in DB
+        // Step 1: Retrieve flight pricing using unique_key
+        $flightPricing = FlightPricing::where('unique_key', $validated['unique_key'])->firstOrFail();
+
+        // Step 2: Create booking entry
         $booking = FlightBooking::create([
-            'flight_offer' => $validated['pricing_data'],
+            'unique_key' => $validated['unique_key'],
+            'flight_offer' => $flightPricing->flight_offer_json,
             'travelers' => $validated['travelers'],
             'contacts' => $validated['contacts'],
             'amount' => $validated['amount'],
@@ -38,7 +43,7 @@ class FlightBookingController extends Controller
             'payment_status' => 'pending',
         ]);
 
-        // Step 2: Create Stripe Checkout session
+        // Step 3: Create Stripe checkout session
         Stripe::setApiKey(config('STRIPE_SECRET'));
 
         $session = Session::create([
@@ -61,7 +66,7 @@ class FlightBookingController extends Controller
             ]
         ]);
 
-        // Optional: store session_id for webhook handling
+        // Optional: Store session ID
         $booking->update(['transaction_id' => $session->id]);
 
         return response()->json([

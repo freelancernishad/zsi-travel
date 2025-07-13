@@ -82,6 +82,16 @@ class ApiResponse
      */
     private function extractData(array $responseData)
     {
+
+
+        if (isset($responseData['pricing_payload'])) {
+            unset($responseData['message'], $responseData['success']);
+            return $responseData;
+        }
+
+
+
+
         // Return if it's a list (numerically indexed array)
         if (array_keys($responseData) === range(0, count($responseData) - 1)) {
             return $responseData;
@@ -105,10 +115,9 @@ class ApiResponse
             return $responseData['data'];
         }
 
-        if (isset($responseData['pricing_payload']) && isset($responseData['details'])) {
-            unset($responseData['message'], $responseData['success']);
-            return $responseData;
-        }
+
+
+
 
         foreach ($responseData as $key => $value) {
             if ($key !== 'message' && $key !== 'success' && is_array($value)) {
