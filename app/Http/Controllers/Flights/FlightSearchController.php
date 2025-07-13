@@ -326,7 +326,7 @@ private function normalizeTravelClass($class)
                 'pricing_payload' => $pricingResponse,
                 'seatmap' => $seatMapResponse,
                 'ancillary' => $ancillaryResponse,
-                'details' => $flightOffer,
+                'details' => FlightOfferResource::collection([$flightOffer]),
             ], 200);
 
         } catch (\Exception $e) {
