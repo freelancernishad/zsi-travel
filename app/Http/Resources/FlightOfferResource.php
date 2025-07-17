@@ -2,9 +2,12 @@
 
 namespace App\Http\Resources;
 
-use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use App\Services\AmadeusService;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Http\Resources\Json\JsonResource;
+
 
 class FlightOfferResource extends JsonResource
 {
@@ -13,7 +16,6 @@ class FlightOfferResource extends JsonResource
         $firstSegment = $this['itineraries'][0]['segments'][0] ?? [];
         $airlineCode = $firstSegment['carrierCode'] ?? 'XX';
 
-        // ✅ Infer deal type and isOneWay based on itinerary count
         $itineraryCount = count($this['itineraries'] ?? []);
         $dealType = match (true) {
             $itineraryCount === 1 => 'one-way',
@@ -44,8 +46,6 @@ class FlightOfferResource extends JsonResource
             'totalDuration' => $this->calculateTotalDuration($this['itineraries'] ?? []),
             'travelerPricing' => $this->mapTravelerPricing($this['travelerPricings'] ?? []),
             ...$this->formatLegsByType($dealType, $this['itineraries'], $this['travelerPricings'][0]['fareDetailsBySegment'] ?? []),
-
-            // ✅ Full encoded offer
             'full_offer_encoded' => base64_encode(json_encode($this->resource)),
         ];
     }
@@ -126,8 +126,14 @@ class FlightOfferResource extends JsonResource
                 $amenities = $this->getSegmentAmenities($fareDetailsBySegment, $seg['id'] ?? null);
                 return [
                     'departureAirport' => $seg['departure']['iataCode'],
+                    'departureAirport_full_name' => $this->formatAirportDetails($seg['departure']['iataCode'])['name'],
+                    'departureAirport_city_name' => $this->formatAirportDetails($seg['departure']['iataCode'])['cityName'],
+                    'departureAirport_country_name' => $this->formatAirportDetails($seg['departure']['iataCode'])['countryName'],
                     'departureTime' => $this->formatTime($seg['departure']['at']),
                     'arrivalAirport' => $seg['arrival']['iataCode'],
+                    'arrivalAirport_full_name' => $this->formatAirportDetails($seg['arrival']['iataCode'])['name'],
+                    'arrivalAirport_city_name' => $this->formatAirportDetails($seg['arrival']['iataCode'])['cityName'],
+                    'arrivalAirport_country_name' => $this->formatAirportDetails($seg['arrival']['iataCode'])['countryName'],
                     'arrivalTime' => $this->formatTime($seg['arrival']['at']),
                     'terminalFrom' => $seg['departure']['terminal'] ?? null,
                     'terminalTo' => $seg['arrival']['terminal'] ?? null,
@@ -139,7 +145,6 @@ class FlightOfferResource extends JsonResource
                     ...$amenities,
                 ];
             }),
-
             'stopsDetails' => collect($segments)->slice(1)->values()->map(function ($seg, $index) {
                 return [
                     'stopNumber' => $index + 1,
@@ -148,10 +153,6 @@ class FlightOfferResource extends JsonResource
                     'layoverAirportName' => $seg['departure']['iataCode'],
                 ];
             }),
-
-
-
-
         ];
     }
 
@@ -210,4 +211,39 @@ class FlightOfferResource extends JsonResource
 
         return sprintf('%02dh %02dm', $totalHours, $remainingMinutes);
     }
+
+    private function formatAirportDetails(string $iataCode): array
+    {
+        $info = AmadeusService::getAirportDetailsByIata($iataCode);
+
+        Log::info("Fetched airport info for {$iataCode}", ['info' => $info]);
+        return $info
+            ? [
+                'name' => $info['name'] ?? $iataCode,
+                'cityName' => $info['address']['cityName'] ?? null,
+                'countryName' => $info['address']['countryName'] ?? null,
+            ]
+            : [
+                'name' => $iataCode,
+                'cityName' => null,
+                'countryName' => null,
+            ];
+    }
+
+
+
+    //     private function formatAirportDetails(string $iataCode): string
+    // {
+    //     $cacheKey = "airport_info_{$iataCode}";
+
+    //     return cache()->remember($cacheKey, now()->addDays(1), function () use ($iataCode) {
+    //         $info = AmadeusService::getAirportDetailsByIata($iataCode);
+
+    //         Log::info("Fetched airport info for {$iataCode}", ['info' => $info]);
+    //         return $info
+    //             ? "{$info['name']} ({$info['address']['cityName']})"
+    //             : $iataCode;
+    //     });
+    // }
+
 }

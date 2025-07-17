@@ -44,4 +44,29 @@ class AmadeusService
 
         return $response->json();
     }
+
+    public static function getAirportDetailsByIata(string $iataCode): ?array
+    {
+        try {
+            $response = self::call(
+                'GET',
+                '/v1/reference-data/locations',
+                [],
+                [
+                    'subType' => 'AIRPORT',
+                    'keyword' => $iataCode
+                ]
+            );
+
+            return $response['data'][0] ?? null;
+        } catch (\Exception $e) {
+            // Optional: Log or fallback
+            return null;
+        }
+    }
+
+
+
+
+
 }
