@@ -13,6 +13,11 @@ class FlightOfferResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        static $total = 0;
+        $total += $this->additional['total'] ?? 1;
+
+
+
         $firstSegment = $this['itineraries'][0]['segments'][0] ?? [];
         $airlineCode = $firstSegment['carrierCode'] ?? 'XX';
 
@@ -45,12 +50,12 @@ class FlightOfferResource extends JsonResource
             'dealType' => $dealType,
             'totalDuration' => $this->calculateTotalDuration($this['itineraries'] ?? []),
             'travelerPricing' => $this->mapTravelerPricing($this['travelerPricings'] ?? []),
-            ...$this->formatLegsByType($dealType, $this['itineraries'], $this['travelerPricings'][0]['fareDetailsBySegment'] ?? []),
+            ...$this->formatLegsByType($dealType, $this['itineraries'], $this['travelerPricings'][0]['fareDetailsBySegment'] ?? [],$total),
             'full_offer_encoded' => base64_encode(json_encode($this->resource)),
         ];
     }
 
-    private function formatLegsByType($type, $itineraries, $fareDetailsBySegment)
+    private function formatLegsByType($type, $itineraries, $fareDetailsBySegment,$total)
     {
         if ($type === 'multi-destination') {
             return [
@@ -65,7 +70,7 @@ class FlightOfferResource extends JsonResource
 
         return [
             'outbound' => array_merge(
-                $this->mapItinerary($itineraries[0] ?? [], $fareDetailsBySegment),
+                $this->mapItinerary($itineraries[0] ?? [], $fareDetailsBySegment,$total),
                 ['label' => 'Outbound']
             ),
             'return' => $type === 'round-trip'
@@ -106,8 +111,12 @@ class FlightOfferResource extends JsonResource
         });
     }
 
-    private function mapItinerary($itinerary, $fareDetailsBySegment)
+    private function mapItinerary($itinerary, $fareDetailsBySegment,$total=2)
     {
+
+
+
+
         $segments = $itinerary['segments'] ?? [];
         $first = $segments[0] ?? [];
         $last = end($segments) ?: [];
@@ -122,18 +131,16 @@ class FlightOfferResource extends JsonResource
             'duration' => $this->formatDuration($itinerary['duration'] ?? null),
             'numberOfStops' => count($segments) > 0 ? count($segments) - 1 : 0,
             'nonStop' => count($segments) === 1,
-            'segments' => collect($segments)->map(function ($seg) use ($fareDetailsBySegment) {
+            'segments' => collect($segments)->map(function ($seg) use ($fareDetailsBySegment, $total) {
                 $amenities = $this->getSegmentAmenities($fareDetailsBySegment, $seg['id'] ?? null);
-                return [
-                    'departureAirport' => $seg['departure']['iataCode'],
-                    // 'departureAirport_full_name' => $this->formatAirportDetails($seg['departure']['iataCode'])['name'],
-                    // 'departureAirport_city_name' => $this->formatAirportDetails($seg['departure']['iataCode'])['cityName'],
-                    // 'departureAirport_country_name' => $this->formatAirportDetails($seg['departure']['iataCode'])['countryName'],
+
+                $departureIata = $seg['departure']['iataCode'];
+                $arrivalIata = $seg['arrival']['iataCode'];
+
+                $segmentData = [
+                    'departureAirport' => $departureIata,
                     'departureTime' => $this->formatTime($seg['departure']['at']),
-                    'arrivalAirport' => $seg['arrival']['iataCode'],
-                    // 'arrivalAirport_full_name' => $this->formatAirportDetails($seg['arrival']['iataCode'])['name'],
-                    // 'arrivalAirport_city_name' => $this->formatAirportDetails($seg['arrival']['iataCode'])['cityName'],
-                    // 'arrivalAirport_country_name' => $this->formatAirportDetails($seg['arrival']['iataCode'])['countryName'],
+                    'arrivalAirport' => $arrivalIata,
                     'arrivalTime' => $this->formatTime($seg['arrival']['at']),
                     'terminalFrom' => $seg['departure']['terminal'] ?? null,
                     'terminalTo' => $seg['arrival']['terminal'] ?? null,
@@ -144,6 +151,22 @@ class FlightOfferResource extends JsonResource
                     'duration' => $this->formatDuration($seg['duration']),
                     ...$amenities,
                 ];
+
+                // শুধু যদি একটাই ফ্লাইট থাকে, তখন অতিরিক্ত airport details যোগ করবো
+                if ($total == 1) {
+                    $departureDetails = $this->formatAirportDetails($departureIata);
+                    $arrivalDetails = $this->formatAirportDetails($arrivalIata);
+
+                    $segmentData['departureAirport_full_name'] = $departureDetails['name'];
+                    $segmentData['departureAirport_city_name'] = $departureDetails['cityName'];
+                    $segmentData['departureAirport_country_name'] = $departureDetails['countryName'];
+
+                    $segmentData['arrivalAirport_full_name'] = $arrivalDetails['name'];
+                    $segmentData['arrivalAirport_city_name'] = $arrivalDetails['cityName'];
+                    $segmentData['arrivalAirport_country_name'] = $arrivalDetails['countryName'];
+                }
+
+                return $segmentData;
             }),
             'stopsDetails' => collect($segments)->slice(1)->values()->map(function ($seg, $index) {
                 return [
@@ -214,20 +237,24 @@ class FlightOfferResource extends JsonResource
 
     private function formatAirportDetails(string $iataCode): array
     {
-        $info = AmadeusService::getAirportDetailsByIata($iataCode);
+        $cacheKey = "airport_info_{$iataCode}";
 
-        Log::info("Fetched airport info for {$iataCode}", ['info' => $info]);
-        return $info
-            ? [
-                'name' => $info['name'] ?? $iataCode,
-                'cityName' => $info['address']['cityName'] ?? null,
-                'countryName' => $info['address']['countryName'] ?? null,
-            ]
-            : [
-                'name' => $iataCode,
-                'cityName' => null,
-                'countryName' => null,
-            ];
+        // return cache()->remember($cacheKey, now()->addDays(1), function () use ($iataCode) {
+            $info = AmadeusService::getAirportDetailsByIata($iataCode);
+
+            Log::info("Fetched airport info for {$iataCode}", ['info' => $info]);
+            return $info
+                ? [
+                    'name' => $info['name'] ?? $iataCode,
+                    'cityName' => $info['address']['cityName'] ?? null,
+                    'countryName' => $info['address']['countryName'] ?? null,
+                ]
+                : [
+                    'name' => $iataCode,
+                    'cityName' => null,
+                    'countryName' => null,
+                ];
+        // });
     }
 
 
