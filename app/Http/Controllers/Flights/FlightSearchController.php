@@ -245,6 +245,7 @@ private function normalizeTravelClass($class)
                 ], 422);
             }
 
+            Log::info($flightOffer);
             /*
             |------------------------------------------------------------------
             | Step 1: Pricing API
