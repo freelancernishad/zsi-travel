@@ -150,6 +150,7 @@ class FlightOfferPricingResource extends JsonResource
                     'operatingCarrier' => $seg['operating']['carrierCode'] ?? $seg['carrierCode'],
                     'aircraftCode' => $seg['aircraft']['code'] ?? null,
                     'duration' => $this->formatDuration($seg['duration']),
+                    //  'baggage' => $this->getBaggageForSegment($seg['id']),
                     ...$amenities,
                 ];
 
@@ -275,6 +276,21 @@ class FlightOfferPricingResource extends JsonResource
     // }
 
 
+        /**
+     * Get baggage quantity from travelerPricings -> fareDetailsBySegment
+     */
+    protected function getBaggageForSegment($segmentId)
+    {
+        foreach ($this['travelerPricings'] ?? [] as $traveler) {
+            foreach ($traveler['fareDetailsBySegment'] ?? [] as $fare) {
+                if ($fare['segmentId'] == $segmentId) {
+                    return $fare['includedCheckedBags']['quantity'] ?? 0;
+                }
+            }
+        }
+
+        return 0; // fallback if not found
+    }
 
 
 
