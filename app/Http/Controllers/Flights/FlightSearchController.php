@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\FlightOfferResource;
 use Symfony\Component\HttpFoundation\Response;
+use App\Http\Resources\FlightOfferPricingResource;
 
 class FlightSearchController extends Controller
 {
@@ -326,7 +327,7 @@ private function normalizeTravelClass($class)
                 'pricing_payload' => $pricingResponse,
                 'seatmap' => $seatMapResponse,
                 'ancillary' => $ancillaryResponse,
-                'details' => FlightOfferResource::collection([$flightOffer]),
+                'details' => FlightOfferPricingResource::collection([$flightOffer]),
             ], 200);
 
         } catch (\Exception $e) {

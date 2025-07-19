@@ -66,6 +66,24 @@ class AmadeusService
     }
 
 
+    public static function getAirlineNameByCode(string $iataCode): ?string
+    {
+        try {
+            $response = self::call(
+                'GET',
+                '/v1/reference-data/airlines',
+                [],
+                [
+                    'airlineCodes' => $iataCode
+                ]
+            );
+
+            return $response['data'][0]['commonName'] ?? $iataCode;
+        } catch (\Exception $e) {
+            // Optional: Log or fallback
+            return $iataCode;
+        }
+    }
 
 
 

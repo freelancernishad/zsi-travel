@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 
-class FlightOfferResource extends JsonResource
+class FlightOfferPricingResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
@@ -40,6 +40,7 @@ class FlightOfferResource extends JsonResource
             'numberOfSeats' => $this['numberOfBookableSeats'] ?? null,
             'refundable' => $this['refundable'] ?? 'Partially Refundable',
             'airline' => $this['airline_name'] ?? $airlineCode,
+            'airlineName' => AmadeusService::getAirlineNameByCode($airlineCode),
             'airlineLogo' => "https://logos.skyscnr.com/images/airlines/favicon/{$airlineCode}.png",
             'price' => (float) $this['price']['total'],
             'basePrice' => (float) $this['price']['base'],
@@ -153,18 +154,18 @@ class FlightOfferResource extends JsonResource
                 ];
 
                 // শুধু যদি একটাই ফ্লাইট থাকে, তখন অতিরিক্ত airport details যোগ করবো
-                // if ($total == 1) {
-                //     $departureDetails = $this->formatAirportDetails($departureIata);
-                //     $arrivalDetails = $this->formatAirportDetails($arrivalIata);
+                if ($total == 1) {
+                    $departureDetails = $this->formatAirportDetails($departureIata);
+                    $arrivalDetails = $this->formatAirportDetails($arrivalIata);
 
-                //     $segmentData['departureAirport_full_name'] = $departureDetails['name'];
-                //     $segmentData['departureAirport_city_name'] = $departureDetails['cityName'];
-                //     $segmentData['departureAirport_country_name'] = $departureDetails['countryName'];
+                    $segmentData['departureAirport_full_name'] = $departureDetails['name'];
+                    $segmentData['departureAirport_city_name'] = $departureDetails['cityName'];
+                    $segmentData['departureAirport_country_name'] = $departureDetails['countryName'];
 
-                //     $segmentData['arrivalAirport_full_name'] = $arrivalDetails['name'];
-                //     $segmentData['arrivalAirport_city_name'] = $arrivalDetails['cityName'];
-                //     $segmentData['arrivalAirport_country_name'] = $arrivalDetails['countryName'];
-                // }
+                    $segmentData['arrivalAirport_full_name'] = $arrivalDetails['name'];
+                    $segmentData['arrivalAirport_city_name'] = $arrivalDetails['cityName'];
+                    $segmentData['arrivalAirport_country_name'] = $arrivalDetails['countryName'];
+                }
 
                 return $segmentData;
             }),
