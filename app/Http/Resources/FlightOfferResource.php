@@ -40,7 +40,7 @@ class FlightOfferResource extends JsonResource
             'numberOfSeats' => $this['numberOfBookableSeats'] ?? null,
             'refundable' => $this['refundable'] ?? 'Partially Refundable',
             'airline' => $this['airline_name'] ?? $airlineCode,
-            'airlinename' => AmadeusService::getAirlineNameByCode($airlineCode),
+            'airline_name' => AmadeusService::getAirlineNameByCode($airlineCode),
             'airlineLogo' => "https://logos.skyscnr.com/images/airlines/favicon/{$airlineCode}.png",
             'price' => (float) $this['price']['total'],
             'basePrice' => (float) $this['price']['base'],
