@@ -21,8 +21,8 @@ class AmadeusTokenService
         $baseUrl = config('AMADEUS_BASE_API', 'https://api.amadeus.com');
 
         $response = Http::asForm()->post("$baseUrl/v1/security/oauth2/token", [
-            'client_id' => env('AMADEUS_CLIENT_ID'),
-            'client_secret' => env('AMADEUS_CLIENT_SECRET'),
+            'client_id' => config('AMADEUS_CLIENT_ID'),
+            'client_secret' => config('AMADEUS_CLIENT_SECRET'),
             'grant_type' => 'client_credentials',
         ]);
         Log::info("$baseUrl/security/oauth2/token");
