@@ -18,7 +18,7 @@ class AmadeusTokenService
             return $token->access_token;
         }
 
-        $baseUrl = config('AMADEUS_BASE_API', 'https://test.api.amadeus.com');
+        $baseUrl = config('AMADEUS_BASE_API', 'https://api.amadeus.com');
 
         $response = Http::asForm()->post("$baseUrl/v1/security/oauth2/token", [
             'client_id' => env('AMADEUS_CLIENT_ID'),

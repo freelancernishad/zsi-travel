@@ -1,6 +1,8 @@
 <?php
 namespace App\Services;
 
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use App\Services\AmadeusTokenService;
 
@@ -17,10 +19,16 @@ class AmadeusService
      */
     public static function call(string $method, string $endpoint, array $body = [], array $queryParams = []): array
     {
-        $baseUrl = config('AMADEUS_BASE_API', 'https://test.api.amadeus.com');
+        $baseUrl = config('AMADEUS_BASE_API', 'https://api.amadeus.com');
 
         // ✅ Token from service
         $token = app(AmadeusTokenService::class)->getAccessToken();
+
+
+
+        Log::info('[AmadeusService] Using access token (partial): ' . Str::limit($token, 40));
+        Log::info('[AmadeusService] Endpoint: ' . $endpoint);
+
 
         $http = Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
@@ -39,6 +47,15 @@ class AmadeusService
 
         if (!$response->successful()) {
             $message = $response->json()['errors'][0]['detail'] ?? 'Unknown Amadeus API error';
+
+
+            Log::error('[AmadeusService] Failed request', [
+                'status' => $response->status(),
+                'body' => $response->json(),
+                'sent_token' => Str::limit($token, 40),
+            ]);
+
+
             throw new \Exception("Amadeus API error: {$message}", $response->status());
         }
 
