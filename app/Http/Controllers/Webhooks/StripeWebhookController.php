@@ -88,6 +88,7 @@ class StripeWebhookController extends Controller
 
         Log::info("[AmadeusWebhook] Using Token: $token");
         Log::info("[AmadeusWebhook] Sending POST $url");
+        Log::info('[AmadeusWebhook] Request body: ' . json_encode($payload, JSON_PRETTY_PRINT));
 
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
