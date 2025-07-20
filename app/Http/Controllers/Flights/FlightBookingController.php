@@ -21,6 +21,9 @@ class FlightBookingController extends Controller
             'contacts' => 'required|array',
             'amount' => 'required|numeric',
             'currency' => 'required|string',
+            's_url' => 'required|url',
+            'f_url' => 'nullable|url',
+            'c_url' => 'required|url',
         ]);
 
         if ($validator->fails()) {
@@ -59,8 +62,8 @@ class FlightBookingController extends Controller
                 'quantity' => 1,
             ]],
             'mode' => 'payment',
-            'success_url' => url('/booking-success?session_id={CHECKOUT_SESSION_ID}'),
-            'cancel_url' => url('/booking-cancel'),
+            'success_url' => $validated['s_url'] . '?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => $validated['c_url'],
             'metadata' => [
                 'booking_id' => $booking->id,
             ]
