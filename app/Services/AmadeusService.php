@@ -20,15 +20,16 @@ class AmadeusService
     public static function call(string $method, string $endpoint, array $body = [], array $queryParams = []): array
     {
         $baseUrl = config('AMADEUS_BASE_API', 'https://api.amadeus.com');
-
-        // ✅ Token from service
         $token = app(AmadeusTokenService::class)->getAccessToken();
+        $url = $baseUrl . $endpoint;
 
+        if (!empty($queryParams)) {
+            $url .= '?' . http_build_query($queryParams);
+        }
 
-
-        Log::info('[AmadeusService] Using access token (partial): ' . Str::limit($token, 40));
-        Log::info('[AmadeusService] Endpoint: ' . $endpoint);
-
+        Log::info("[AmadeusService] Calling {$method} {$url}");
+        Log::info("[AmadeusService] Request Body", $body);
+        Log::info("[AmadeusService] Bearer Token", ['token' => $token]);
 
         $http = Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
@@ -36,31 +37,30 @@ class AmadeusService
             'Content-Type' => 'application/json',
         ]);
 
-        $url = $baseUrl . $endpoint;
-
-        // ✅ Execute based on method
         $response = match (strtoupper($method)) {
-            'POST' => $http->post($url . '?' . http_build_query($queryParams), $body),
-            'GET'  => $http->get($url, $queryParams),
+            'POST' => $http->post($url, $body),
+            'GET'  => $http->get($url),
             default => throw new \Exception("Unsupported HTTP method: {$method}"),
         };
 
         if (!$response->successful()) {
-            $message = $response->json()['errors'][0]['detail'] ?? 'Unknown Amadeus API error';
-
-
-            Log::error('[AmadeusService] Failed request', [
+            $errorBody = $response->json();
+            Log::error('[AmadeusService] Request Failed', [
                 'status' => $response->status(),
-                'body' => $response->json(),
-                'sent_token' => Str::limit($token, 40),
+                'error_body' => $errorBody,
+                'sent_token' => $token,
+                'request_url' => $url,
             ]);
 
-
+            $message = $errorBody['errors'][0]['detail'] ?? 'Unknown Amadeus API error';
             throw new \Exception("Amadeus API error: {$message}", $response->status());
         }
 
+        Log::info("[AmadeusService] Success Response", $response->json());
+
         return $response->json();
     }
+
 
     public static function getAirportDetailsByIata(string $iataCode): ?array
     {
