@@ -65,6 +65,8 @@ public function handle(Request $request)
                 ]
             ];
 
+            Log::info('Amadeus booking payload', $orderPayload);
+
             // Call Amadeus API - try once, then retry if invalid token
             try {
                 $amadeusResponse = AmadeusService::call(
