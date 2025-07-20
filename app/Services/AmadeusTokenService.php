@@ -21,7 +21,7 @@ class AmadeusTokenService
         return $this->generateNewToken();
     }
 
-    protected function generateNewToken()
+    public function generateNewToken()
     {
         $baseUrl = config('AMADEUS_BASE_API', 'https://api.amadeus.com');
 
