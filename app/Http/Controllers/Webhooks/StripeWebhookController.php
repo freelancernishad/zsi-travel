@@ -40,10 +40,11 @@ public function handle(Request $request)
         }
 
         try {
+
             // Decode stored JSON data if needed
-            $pricingData = json_decode($booking->flight_offer, true);
-            $travelers = json_decode($booking->travelers, true);
-            $contacts = json_decode($booking->contacts, true);
+            $pricingData = is_string($booking->flight_offer) ? json_decode($booking->flight_offer, true) : $booking->flight_offer;
+            $travelers = is_string($booking->travelers) ? json_decode($booking->travelers, true) : $booking->travelers;
+            $contacts = is_string($booking->contacts) ? json_decode($booking->contacts, true) : $booking->contacts;
 
             Log::info('Preparing Amadeus booking with payload', [
                 'flight_offer' => $pricingData,
