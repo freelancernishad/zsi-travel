@@ -61,7 +61,7 @@ class StripeWebhookController extends Controller
                     ],
                 ];
 
-                $response = $this->sendAmadeusBooking($orderPayload);
+                // $response = $this->sendAmadeusBooking($orderPayload);
 
                 $booking->update([
                     // 'booking_id' => $response['data']['id'] ?? null,
