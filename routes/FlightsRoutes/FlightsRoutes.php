@@ -14,5 +14,6 @@ Route::prefix('flights')->group(function () {
 
     Route::post('/booking/create-payment', [FlightBookingController::class, 'createPayment']);
     Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle']);
+    Route::get('/booking/by-transaction', [FlightBookingController::class, 'getBookingByTransactionId']);
 
 });

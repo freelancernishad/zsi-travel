@@ -76,4 +76,41 @@ class FlightBookingController extends Controller
             'url' => $session->url,
         ]);
     }
+
+    public function getBookingByTransactionId(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'session_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $validated = $validator->validated();
+
+        $booking = FlightBooking::where('transaction_id', $validated['session_id'])->first();
+
+        if (!$booking) {
+            return response()->json(['message' => 'Booking not found'], 404);
+        }
+
+        if ($booking->payment_status !== 'success') {
+            return response()->json(['message' => 'Payment not successful'], 400);
+        }
+
+        return response()->json([
+            'id' => $booking->id,
+            'unique_key' => $booking->unique_key,
+            'amount' => $booking->amount,
+            'currency' => $booking->currency,
+            'payment_status' => $booking->payment_status,
+            'travelers' => $booking->travelers,
+            'contacts' => $booking->contacts,
+            'flight_offer' => \App\Http\Resources\FlightOfferPricingResource::collection([$booking->flight_offer]),
+            'created_at' => $booking->created_at,
+        ]);
+    }
+
+
 }
