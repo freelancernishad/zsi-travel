@@ -205,6 +205,135 @@ private function normalizeTravelClass($class)
 }
 
 
+public function searchPostMethod(Request $request)
+{
+    try {
+        $currency = $request->input('currencyCode', 'USD');
+        $max = $request->input('max', 10);
+        $adult = $request->input('adult');
+        $children = $request->input('children', 0);
+        $infants = $request->input('infants', 0);
+        $travelClass = $request->input('travelClass', 'ECONOMY');
+        $tripTypeInput = $request->input('trip_type');
+        $trips = $request->input('trips', []);
+
+        if (empty($trips) || !$adult) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Missing required search parameters',
+            ], 400);
+        }
+
+        // ✅ Normalize and validate trip data
+        $parsedTrips = collect($trips)
+            ->filter(fn($trip) => isset($trip['from'], $trip['to'], $trip['date']))
+            ->map(function ($trip, $index) {
+                return [
+                    'id' => (string)($index + 1),
+                    'originLocationCode' => $trip['from'],
+                    'destinationLocationCode' => $trip['to'],
+                    'departureDateTimeRange' => ['date' => $trip['date']],
+                ];
+            })
+            ->values();
+
+        if ($parsedTrips->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No valid trips provided',
+            ], 400);
+        }
+
+        // ✅ Detect trip type if not given
+        $tripCount = $parsedTrips->count();
+        $tripType = $tripTypeInput;
+        if (!$tripType || !in_array($tripType, ['one-way', 'round-trip', 'multi-destination'])) {
+            $tripType = match (true) {
+                $tripCount === 1 => 'one-way',
+                $tripCount === 2 => 'round-trip',
+                $tripCount > 2 => 'multi-destination',
+                default => 'unknown',
+            };
+        }
+
+        $normalizedClass = $this->normalizeTravelClass($travelClass);
+
+        // ✅ Create travelers
+        $travelers = [
+            [
+                'id' => '1',
+                'travelerType' => 'ADULT',
+                'cabinRestrictions' => [
+                    [
+                        'cabin' => strtoupper($normalizedClass),
+                        'coverage' => 'MOST_SEGMENTS',
+                        'originDestinationIds' => $parsedTrips->pluck('id')->all(),
+                    ],
+                ],
+            ]
+        ];
+
+        $id = 2;
+        for ($i = 0; $i < (int)$children; $i++) {
+            $travelers[] = ['id' => (string)($id++), 'travelerType' => 'CHILD'];
+        }
+
+        for ($i = 0; $i < (int)$infants; $i++) {
+            $travelers[] = ['id' => (string)($id++), 'travelerType' => 'HELD_INFANT'];
+        }
+
+        // ✅ Build final POST body for Amadeus API
+        $queryParams = [
+            'currencyCode' => $currency,
+            'originDestinations' => $parsedTrips->toArray(),
+            'travelers' => $travelers,
+            'sources' => ['GDS'],
+            'searchCriteria' => [
+                'maxFlightOffers' => (int)$max,
+            ],
+        ];
+
+        $response = AmadeusService::call(
+            'POST',
+            '/v2/shopping/flight-offers',
+            $queryParams,
+            []
+        );
+
+        $offers = $response['data'] ?? [];
+
+        // ✅ Format the response
+        $formatted = FlightOfferResource::collection($offers);
+
+        // ✅ Optional: filter specific fields
+        $fields = $request->input('fields');
+        if ($fields) {
+            $selectedFields = is_array($fields)
+                ? collect($fields)->flatMap(fn($f) => explode(',', $f))->map('trim')->toArray()
+                : explode(',', $fields);
+
+            $formatted = $formatted->map(fn($flight) => collect($flight)->only($selectedFields));
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Flight offers fetched successfully',
+            'payload' => [
+                'total' => count($formatted),
+                'trip_type' => $tripType,
+                'formatted' => $formatted,
+            ],
+        ], 200);
+
+    } catch (\Exception $e) {
+        \Log::error('Flight Search Error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Flight search failed',
+            'error' => $e->getMessage(),
+        ], 500);
+    }
+}
 
 
 
