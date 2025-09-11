@@ -302,6 +302,7 @@ public function searchPostMethod(Request $request)
 
         $offers = $response['data'] ?? [];
 
+
         // ✅ Format the response
         $formatted = FlightOfferResource::collection($offers);
 

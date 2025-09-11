@@ -16,7 +16,8 @@ class FlightOfferResource extends JsonResource
         static $total = 0;
         $total += $this->additional['total'] ?? 1;
 
-
+        Log::info("Flight Offer Resource: ", $this->resource);
+        $full_offer_encoded = base64_encode(json_encode($this->resource));
 
         $firstSegment = $this['itineraries'][0]['segments'][0] ?? [];
         $airlineCode = $firstSegment['carrierCode'] ?? 'XX';
@@ -52,7 +53,7 @@ class FlightOfferResource extends JsonResource
             'totalDuration' => $this->calculateTotalDuration($this['itineraries'] ?? []),
             'travelerPricing' => $this->mapTravelerPricing($this['travelerPricings'] ?? []),
             ...$this->formatLegsByType($dealType, $this['itineraries'], $this['travelerPricings'][0]['fareDetailsBySegment'] ?? [],$total),
-            'full_offer_encoded' => base64_encode(json_encode($this->resource)),
+            'full_offer_encoded' => $full_offer_encoded,
         ];
     }
 
