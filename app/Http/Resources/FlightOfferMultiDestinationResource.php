@@ -8,27 +8,20 @@ use App\Services\AmadeusService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-
-class FlightOfferPricingResource extends JsonResource
+class FlightOfferMultiDestinationResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
         static $total = 0;
         $total += $this->additional['total'] ?? 1;
 
-        // Log::info('Flight Offer Pricing Resource: ' . $this->resource);
+        Log::info("Flight Offer Resource: ", $this->resource);
         $full_offer_encoded = base64_encode(json_encode($this->resource));
 
         $firstSegment = $this['itineraries'][0]['segments'][0] ?? [];
         $airlineCode = $firstSegment['carrierCode'] ?? 'XX';
 
-        $itineraryCount = count($this['itineraries'] ?? []);
-        $dealType = match (true) {
-            $itineraryCount === 1 => 'one-way',
-            $itineraryCount === 2 => 'round-trip',
-            $itineraryCount > 2 => 'multi-destination',
-            default => 'unknown',
-        };
+        $dealType = $this->detectDealType($this['itineraries'] ?? []);
         $isOneWay = $dealType === 'one-way';
 
         return [
@@ -52,12 +45,36 @@ class FlightOfferPricingResource extends JsonResource
             'dealType' => $dealType,
             'totalDuration' => $this->calculateTotalDuration($this['itineraries'] ?? []),
             'travelerPricing' => $this->mapTravelerPricing($this['travelerPricings'] ?? []),
-            ...$this->formatLegsByType($dealType, $this['itineraries'], $this['travelerPricings'][0]['fareDetailsBySegment'] ?? [],$total),
+            ...$this->formatLegsByType($dealType, $this['itineraries'], $this['travelerPricings'][0]['fareDetailsBySegment'] ?? [], $total),
             'full_offer_encoded' => $full_offer_encoded,
         ];
     }
 
-    private function formatLegsByType($type, $itineraries, $fareDetailsBySegment,$total)
+    private function detectDealType(array $itineraries): string
+    {
+        $count = count($itineraries);
+
+        if ($count === 0) {
+            return 'unknown';
+        }
+
+        $firstFrom = $itineraries[0]['segments'][0]['departure']['iataCode'] ?? null;
+        $lastItinerary = $itineraries[$count - 1];
+        $lastSegments = $lastItinerary['segments'] ?? [];
+        $lastTo = end($lastSegments)['arrival']['iataCode'] ?? null;
+
+        if ($count === 1) {
+            return 'one-way';
+        }
+
+        if ($count === 2 && $firstFrom === $lastTo) {
+            return 'round-trip';
+        }
+
+        return 'multi-destination';
+    }
+
+    private function formatLegsByType($type, $itineraries, $fareDetailsBySegment, $total)
     {
         if ($type === 'multi-destination') {
             return [
@@ -72,7 +89,7 @@ class FlightOfferPricingResource extends JsonResource
 
         return [
             'outbound' => array_merge(
-                $this->mapItinerary($itineraries[0] ?? [], $fareDetailsBySegment,$total),
+                $this->mapItinerary($itineraries[0] ?? [], $fareDetailsBySegment, $total),
                 ['label' => 'Outbound']
             ),
             'return' => $type === 'round-trip'
@@ -113,12 +130,8 @@ class FlightOfferPricingResource extends JsonResource
         });
     }
 
-    private function mapItinerary($itinerary, $fareDetailsBySegment,$total=2)
+    private function mapItinerary($itinerary, $fareDetailsBySegment, $total = 2)
     {
-
-
-
-
         $segments = $itinerary['segments'] ?? [];
         $first = $segments[0] ?? [];
         $last = end($segments) ?: [];
@@ -139,7 +152,7 @@ class FlightOfferPricingResource extends JsonResource
                 $departureIata = $seg['departure']['iataCode'];
                 $arrivalIata = $seg['arrival']['iataCode'];
 
-                $segmentData = [
+                return [
                     'departureAirport' => $departureIata,
                     'departureTime' => $this->formatTime($seg['departure']['at']),
                     'arrivalAirport' => $arrivalIata,
@@ -151,25 +164,8 @@ class FlightOfferPricingResource extends JsonResource
                     'operatingCarrier' => $seg['operating']['carrierCode'] ?? $seg['carrierCode'],
                     'aircraftCode' => $seg['aircraft']['code'] ?? null,
                     'duration' => $this->formatDuration($seg['duration']),
-                    //  'baggage' => $this->getBaggageForSegment($seg['id']),
                     ...$amenities,
                 ];
-
-                // শুধু যদি একটাই ফ্লাইট থাকে, তখন অতিরিক্ত airport details যোগ করবো
-                if ($total == 1) {
-                    $departureDetails = $this->formatAirportDetails($departureIata);
-                    $arrivalDetails = $this->formatAirportDetails($arrivalIata);
-
-                    $segmentData['departureAirport_full_name'] = $departureDetails['name'];
-                    $segmentData['departureAirport_city_name'] = $departureDetails['cityName'];
-                    $segmentData['departureAirport_country_name'] = $departureDetails['countryName'];
-
-                    $segmentData['arrivalAirport_full_name'] = $arrivalDetails['name'];
-                    $segmentData['arrivalAirport_city_name'] = $arrivalDetails['cityName'];
-                    $segmentData['arrivalAirport_country_name'] = $arrivalDetails['countryName'];
-                }
-
-                return $segmentData;
             }),
             'stopsDetails' => collect($segments)->slice(1)->values()->map(function ($seg, $index) {
                 return [
@@ -240,59 +236,20 @@ class FlightOfferPricingResource extends JsonResource
 
     private function formatAirportDetails(string $iataCode): array
     {
-        $cacheKey = "airport_info_{$iataCode}";
+        $info = AmadeusService::getAirportDetailsByIata($iataCode);
 
-        // return cache()->remember($cacheKey, now()->addDays(1), function () use ($iataCode) {
-            $info = AmadeusService::getAirportDetailsByIata($iataCode);
+        Log::info("Fetched airport info for {$iataCode}", ['info' => $info]);
 
-            Log::info("Fetched airport info for {$iataCode}", ['info' => $info]);
-            return $info
-                ? [
-                    'name' => $info['name'] ?? $iataCode,
-                    'cityName' => $info['address']['cityName'] ?? null,
-                    'countryName' => $info['address']['countryName'] ?? null,
-                ]
-                : [
-                    'name' => $iataCode,
-                    'cityName' => null,
-                    'countryName' => null,
-                ];
-        // });
+        return $info
+            ? [
+                'name' => $info['name'] ?? $iataCode,
+                'cityName' => $info['address']['cityName'] ?? null,
+                'countryName' => $info['address']['countryName'] ?? null,
+            ]
+            : [
+                'name' => $iataCode,
+                'cityName' => null,
+                'countryName' => null,
+            ];
     }
-
-
-
-    //     private function formatAirportDetails(string $iataCode): string
-    // {
-    //     $cacheKey = "airport_info_{$iataCode}";
-
-    //     return cache()->remember($cacheKey, now()->addDays(1), function () use ($iataCode) {
-    //         $info = AmadeusService::getAirportDetailsByIata($iataCode);
-
-    //         Log::info("Fetched airport info for {$iataCode}", ['info' => $info]);
-    //         return $info
-    //             ? "{$info['name']} ({$info['address']['cityName']})"
-    //             : $iataCode;
-    //     });
-    // }
-
-
-        /**
-     * Get baggage quantity from travelerPricings -> fareDetailsBySegment
-     */
-    protected function getBaggageForSegment($segmentId)
-    {
-        foreach ($this['travelerPricings'] ?? [] as $traveler) {
-            foreach ($traveler['fareDetailsBySegment'] ?? [] as $fare) {
-                if ($fare['segmentId'] == $segmentId) {
-                    return $fare['includedCheckedBags']['quantity'] ?? 0;
-                }
-            }
-        }
-
-        return 0; // fallback if not found
-    }
-
-
-
 }

@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\FlightOfferResource;
 use Symfony\Component\HttpFoundation\Response;
 use App\Http\Resources\FlightOfferPricingResource;
+use App\Http\Resources\FlightOfferMultiDestinationResource;
 
 class FlightSearchController extends Controller
 {
@@ -303,6 +304,11 @@ public function searchPostMethod(Request $request)
         $offers = $response['data'] ?? [];
 
 
+        if($tripType=='multi-destination'){
+            $formatted = FlightOfferMultiDestinationResource::collection($offers);
+        } else {
+            $formatted = FlightOfferResource::collection($offers);
+        }
         // ✅ Format the response
         $formatted = FlightOfferResource::collection($offers);
 
@@ -343,134 +349,143 @@ public function searchPostMethod(Request $request)
 
 
 
-   public function pricing(Request $request)
-    {
+public function pricing(Request $request)
+{
+    try {
+        $rawInput = $request->input('full_offer_encoded');
+
+        if (!$rawInput) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Missing encoded flight offer data.',
+            ], 400);
+        }
+
+        // Decode input
+        if (is_string($rawInput)) {
+            $decoded = base64_decode($rawInput, true);
+            $flightOffer = json_decode($decoded, true);
+        } elseif (is_array($rawInput)) {
+            $flightOffer = $rawInput;
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid flight offer data format.',
+            ], 422);
+        }
+
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($flightOffer)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid flight offer data.',
+            ], 422);
+        }
+
+        Log::info('Decoded flight offer:', $flightOffer);
+
+        /*
+        |------------------------------------------------------------------
+        | Step 1: Pricing API
+        |------------------------------------------------------------------
+        */
+        $pricingPayload = [
+            'data' => [
+                'type' => 'flight-offers-pricing',
+                'flightOffers' => [$flightOffer],
+            ],
+        ];
+
+        $pricingResponse = AmadeusService::call(
+            'POST',
+            '/v1/shopping/flight-offers/pricing',
+            $pricingPayload
+        );
+
+        /*
+        |------------------------------------------------------------------
+        | Step 2: Seat Map API
+        |------------------------------------------------------------------
+        */
+        $seatMapResponse = null;
         try {
-            $rawInput = $request->input('full_offer_encoded');
-
-            if (!$rawInput) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Missing encoded flight offer data.',
-                ], 400);
-            }
-
-            // Decode input
-            if (is_string($rawInput)) {
-                $decoded = base64_decode($rawInput, true);
-                $flightOffer = json_decode($decoded, true);
-            } elseif (is_array($rawInput)) {
-                $flightOffer = $rawInput;
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid flight offer data format.',
-                ], 422);
-            }
-
-            if (json_last_error() !== JSON_ERROR_NONE || !is_array($flightOffer)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid flight offer data.',
-                ], 422);
-            }
-
-            Log::info($flightOffer);
-            /*
-            |------------------------------------------------------------------
-            | Step 1: Pricing API
-            |------------------------------------------------------------------
-            */
-            $pricingPayload = [
+            $seatMapPayload = [
                 'data' => [
-                    'type' => 'flight-offers-pricing',
+                    'type' => 'flight-offers',
                     'flightOffers' => [$flightOffer],
                 ],
             ];
 
-            $pricingResponse = AmadeusService::call(
+            $seatMapResponse = AmadeusService::call(
                 'POST',
-                '/v1/shopping/flight-offers/pricing',
-                $pricingPayload
+                '/v1/shopping/seatmaps',
+                $seatMapPayload
             );
-
-            /*
-            |------------------------------------------------------------------
-            | Step 2: Seat Map API
-            |------------------------------------------------------------------
-            */
-            $seatMapResponse = null;
-            try {
-                $seatMapPayload = [
-                    'data' => [
-                        'type' => 'flight-offers',
-                        'flightOffers' => [$flightOffer],
-                    ],
-                ];
-
-                $seatMapResponse = AmadeusService::call(
-                    'POST',
-                    '/v1/shopping/seatmaps',
-                    $seatMapPayload
-                );
-            } catch (\Exception $e) {
-                Log::warning('SeatMap unavailable: ' . $e->getMessage());
-            }
-
-            /*
-            |------------------------------------------------------------------
-            | Step 3: Ancillary Services (Optional)
-            |------------------------------------------------------------------
-            */
-            $ancillaryResponse = null;
-            try {
-                $ancillaryResponse = AmadeusService::call(
-                    'POST',
-                    '/v1/booking/ancillary-services',
-                    $seatMapPayload // reused
-                );
-            } catch (\Exception $e) {
-                Log::info('Ancillary API not available: ' . $e->getMessage());
-            }
-
-            /*
-            |------------------------------------------------------------------
-            | Step 4: Store into database
-            |------------------------------------------------------------------
-            */
-            $pricing = FlightPricing::create([
-                'full_offer_encoded' => $rawInput,
-                'flight_offer_json' => $flightOffer,
-                'pricing_response' => $pricingResponse,
-                'seatmap_response' => $seatMapResponse,
-                'ancillary_response' => $ancillaryResponse,
-            ]);
-
-            /*
-            |------------------------------------------------------------------
-            | Step 5: Final Response
-            |------------------------------------------------------------------
-            */
-            return response()->json([
-                'success' => true,
-                'message' => 'Flight pricing successful',
-                'unique_key' => $pricing->unique_key,
-                'pricing_payload' => $pricingResponse,
-                'seatmap' => $seatMapResponse,
-                'ancillary' => $ancillaryResponse,
-                'details' => FlightOfferPricingResource::collection([$flightOffer]),
-            ], 200);
-
         } catch (\Exception $e) {
-            Log::error('Flight pricing failed: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Flight pricing failed',
-                'error' => $e->getMessage(),
-            ], 500);
+            Log::warning('SeatMap unavailable', [
+                'error' => is_array($e->getMessage()) ? json_encode($e->getMessage()) : $e->getMessage(),
+            ]);
         }
+
+        /*
+        |------------------------------------------------------------------
+        | Step 3: Ancillary Services (Optional)
+        |------------------------------------------------------------------
+        */
+        $ancillaryResponse = null;
+        try {
+            $ancillaryResponse = AmadeusService::call(
+                'POST',
+                '/v1/booking/ancillary-services',
+                $seatMapPayload // reused
+            );
+        } catch (\Exception $e) {
+            Log::info('Ancillary API not available', [
+                'error' => is_array($e->getMessage()) ? json_encode($e->getMessage()) : $e->getMessage(),
+            ]);
+        }
+
+        /*
+        |------------------------------------------------------------------
+        | Step 4: Store into database
+        |------------------------------------------------------------------
+        */
+        $pricing = FlightPricing::create([
+            'full_offer_encoded' => $rawInput,
+            'flight_offer_json' => $flightOffer,
+            'pricing_response' => $pricingResponse,
+            'seatmap_response' => $seatMapResponse,
+            'ancillary_response' => $ancillaryResponse,
+        ]);
+
+        /*
+        |------------------------------------------------------------------
+        | Step 5: Final Response
+        |------------------------------------------------------------------
+        */
+        return response()->json([
+            'success' => true,
+            'message' => 'Flight pricing successful',
+            'unique_key' => $pricing->unique_key,
+            'pricing_payload' => $pricingResponse,
+            'seatmap' => $seatMapResponse,
+            'ancillary' => $ancillaryResponse,
+            'details' => FlightOfferPricingResource::collection(collect([$flightOffer])),
+        ], 200);
+
+    } catch (\Exception $e) {
+        Log::error('Flight pricing failed', [
+            'error_message' => is_array($e->getMessage()) ? json_encode($e->getMessage()) : $e->getMessage(),
+            'trace' => $e->getTrace(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Flight pricing failed',
+            'error' => is_array($e->getMessage()) ? json_encode($e->getMessage()) : $e->getMessage(),
+        ], 500);
     }
+}
+
 
 
 

@@ -27,9 +27,9 @@ class AmadeusService
             $url .= '?' . http_build_query($queryParams);
         }
 
-        Log::info("[AmadeusService] Calling {$method} {$url}");
-        Log::info("[AmadeusService] Request Body", $body);
-        Log::info("[AmadeusService] Bearer Token", ['token' => $token]);
+        // Log::info("[AmadeusService] Calling {$method} {$url}");
+        // Log::info("[AmadeusService] Request Body", $body);
+        // Log::info("[AmadeusService] Bearer Token", ['token' => $token]);
 
         $http = Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
