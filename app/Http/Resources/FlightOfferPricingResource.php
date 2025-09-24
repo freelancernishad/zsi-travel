@@ -61,9 +61,9 @@ class FlightOfferPricingResource extends JsonResource
     {
         if ($type === 'multi-destination') {
             return [
-                'legs' => collect($itineraries)->map(function ($itinerary, $index) use ($fareDetailsBySegment) {
+                'legs' => collect($itineraries)->map(function ($itinerary, $index) use ($fareDetailsBySegment,$total) {
                     return array_merge(
-                        $this->mapItinerary($itinerary, $fareDetailsBySegment),
+                        $this->mapItinerary($itinerary, $fareDetailsBySegment,$total),
                         ['label' => 'Flight ' . ($index + 1)]
                     );
                 }),
@@ -154,6 +154,7 @@ class FlightOfferPricingResource extends JsonResource
                     //  'baggage' => $this->getBaggageForSegment($seg['id']),
                     ...$amenities,
                 ];
+
 
                 // শুধু যদি একটাই ফ্লাইট থাকে, তখন অতিরিক্ত airport details যোগ করবো
                 if ($total == 1) {
