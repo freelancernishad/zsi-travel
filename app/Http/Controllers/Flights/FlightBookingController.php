@@ -87,9 +87,9 @@ class FlightBookingController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $validated = $validator->validated();
 
-        $booking = FlightBooking::where('session_id', $validated['sessionid'])->first();
+
+        $booking = FlightBooking::where('session_id', $request->sessionid)->first();
 
         if (!$booking) {
             return response()->json(['message' => 'Booking not found'], 404);

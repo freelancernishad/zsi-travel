@@ -222,11 +222,16 @@ class FlightOfferPricingResource extends JsonResource
         return sprintf('%02dh %02dm', $hours, $minutes);
     }
 
-    private function calculateTotalDuration($itineraries)
+  private function calculateTotalDuration($itineraries)
     {
         $totalMinutes = 0;
 
         foreach ($itineraries as $it) {
+            // Skip if 'duration' key does not exist
+            if (!isset($it['duration'])) {
+                continue;
+            }
+
             preg_match('/PT(?:(\d+)H)?(?:(\d+)M)?/', $it['duration'], $matches);
             $hours = isset($matches[1]) ? (int) $matches[1] : 0;
             $minutes = isset($matches[2]) ? (int) $matches[2] : 0;
@@ -238,6 +243,7 @@ class FlightOfferPricingResource extends JsonResource
 
         return sprintf('%02dh %02dm', $totalHours, $remainingMinutes);
     }
+
 
     private function formatAirportDetails(string $iataCode): array
     {
