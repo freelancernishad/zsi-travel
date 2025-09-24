@@ -80,7 +80,7 @@ class FlightBookingController extends Controller
     public function getBookingByTransactionId(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'session_id' => 'required|string',
+            'sessionid' => 'required|string',
         ]);
 
         if ($validator->fails()) {
@@ -89,7 +89,7 @@ class FlightBookingController extends Controller
 
         $validated = $validator->validated();
 
-        $booking = FlightBooking::where('session_id', $validated['session_id'])->first();
+        $booking = FlightBooking::where('session_id', $validated['sessionid'])->first();
 
         if (!$booking) {
             return response()->json(['message' => 'Booking not found'], 404);
