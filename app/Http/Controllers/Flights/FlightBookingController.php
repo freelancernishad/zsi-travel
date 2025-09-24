@@ -70,7 +70,7 @@ class FlightBookingController extends Controller
         ]);
 
         // Optional: Store session ID
-        $booking->update(['transaction_id' => $session->id]);
+        $booking->update(['transaction_id' => $session->id,'session_id' => $session->id]);
 
         return response()->json([
             'url' => $session->url,
@@ -89,7 +89,7 @@ class FlightBookingController extends Controller
 
         $validated = $validator->validated();
 
-        $booking = FlightBooking::where('transaction_id', $validated['session_id'])->first();
+        $booking = FlightBooking::where('session_id', $validated['session_id'])->first();
 
         if (!$booking) {
             return response()->json(['message' => 'Booking not found'], 404);

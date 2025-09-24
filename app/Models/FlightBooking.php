@@ -18,6 +18,7 @@ class FlightBooking extends Model
         'payment_gateway',
         'payment_status',
         'transaction_id',
+        'session_id',
     ];
 
     protected $casts = [
