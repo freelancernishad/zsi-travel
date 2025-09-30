@@ -26,6 +26,12 @@ if (file_exists($FlightsRoutes = __DIR__.'/FlightsRoutes/FlightsRoutes.php')) {
 
 
 
+if (file_exists($HotelRoutes = __DIR__.'/Hotels/HotelRoutes.php')) {
+    require $HotelRoutes;
+}
+
+
+
 
 // Load users and admins route files
 

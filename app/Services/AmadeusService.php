@@ -35,7 +35,9 @@ class AmadeusService
             'Authorization' => 'Bearer ' . $token,
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',
-        ]);
+        ])
+        ->timeout(60)
+        ->retry(2, 1000);
 
         $response = match (strtoupper($method)) {
             'POST' => $http->post($url, $body),
