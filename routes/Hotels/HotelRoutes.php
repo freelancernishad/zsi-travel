@@ -9,6 +9,8 @@ Route::prefix('hotels')->group(function () {
     Route::get('/by-geocode', [HotelListController::class, 'getHotelsByGeocode']);
     Route::get('/by-ids', [HotelListController::class, 'getHotelsByIds']);
 
+    Route::get('/search', [HotelSearchController::class, 'hotelSearchWithOffers']);
+
 });
 
 Route::prefix('hotels')->group(function () {
